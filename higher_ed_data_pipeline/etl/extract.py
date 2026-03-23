@@ -392,3 +392,161 @@ class Extractor:
         logger.info(f"Extracted {len(df):,} rows from S3")
         
         return df
+    
+    # -------------------------------------------------------------------------
+    # Live Data Source Methods
+    # -------------------------------------------------------------------------
+    
+    def from_live_source(
+        self,
+        source_name: str,
+        dataset: Optional[str] = None,
+        store_raw: bool = True,
+        **kwargs: Any
+    ) -> pd.DataFrame:
+        """
+        Extract data from a registered live data source.
+        
+        Args:
+            source_name: Name of the data source (e.g., "college_scorecard", "ipeds")
+            dataset: Optional dataset name for storage
+            store_raw: Whether to store in raw data lake
+            **kwargs: Source-specific parameters
+            
+        Returns:
+            pd.DataFrame: Extracted data
+        """
+        from higher_ed_data_pipeline.sources.base import DataSourceRegistry
+        from higher_ed_data_pipeline.storage import DataLake
+        
+        # Get the data source
+        source = DataSourceRegistry.get(source_name, self.settings)
+        
+        # Fetch data
+        df = source.fetch(**kwargs)
+        
+        # Store in data lake if requested
+        if store_raw and len(df) > 0:
+            lake = DataLake(self.settings)
+            dataset_name = dataset or f"extract_{source_name}"
+            lake.store(df, source=source_name, dataset=dataset_name)
+        
+        return df
+    
+    def from_college_scorecard(
+        self,
+        fields: Optional[list[str]] = None,
+        field_groups: Optional[list[str]] = None,
+        state: Optional[str] = None,
+        store_raw: bool = True,
+        **kwargs: Any
+    ) -> pd.DataFrame:
+        """
+        Extract data from College Scorecard API.
+        
+        Args:
+            fields: Specific fields to retrieve
+            field_groups: Predefined field groups
+            state: Filter by state code
+            store_raw: Store in raw data lake
+            **kwargs: Additional filters
+            
+        Returns:
+            pd.DataFrame: Institution data
+        """
+        from higher_ed_data_pipeline.sources import CollegeScorecardSource
+        from higher_ed_data_pipeline.storage import DataLake
+        
+        source = CollegeScorecardSource(self.settings)
+        df = source.fetch(
+            fields=fields,
+            field_groups=field_groups,
+            state=state,
+            **kwargs
+        )
+        
+        if store_raw and len(df) > 0:
+            lake = DataLake(self.settings)
+            dataset_name = f"institutions_{state}" if state else "all_institutions"
+            lake.store(df, source="college_scorecard", dataset=dataset_name)
+        
+        return df
+    
+    def from_ipeds(
+        self,
+        survey: str,
+        year: Optional[int] = None,
+        store_raw: bool = True,
+        **kwargs: Any
+    ) -> pd.DataFrame:
+        """
+        Extract data from IPEDS.
+        
+        Args:
+            survey: IPEDS survey code (HD, IC, EF, SFA, GR, etc.)
+            year: Data year
+            store_raw: Store in raw data lake
+            **kwargs: Additional parameters
+            
+        Returns:
+            pd.DataFrame: Survey data
+        """
+        from higher_ed_data_pipeline.sources import IPEDSSource
+        from higher_ed_data_pipeline.storage import DataLake
+        
+        source = IPEDSSource(self.settings)
+        df = source.fetch(survey=survey, year=year, **kwargs)
+        
+        if store_raw and len(df) > 0:
+            lake = DataLake(self.settings)
+            year_str = str(year) if year else "latest"
+            lake.store(df, source="ipeds", dataset=f"{survey.lower()}_{year_str}")
+        
+        return df
+    
+    def from_data_lake(
+        self,
+        source: str,
+        dataset: str,
+        version: Optional[str] = None,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Extract data from the raw data lake.
+        
+        Args:
+            source: Data source name
+            dataset: Dataset name
+            version: Specific version timestamp (defaults to latest)
+            
+        Returns:
+            pd.DataFrame or None
+        """
+        from higher_ed_data_pipeline.storage import DataLake
+        
+        lake = DataLake(self.settings)
+        
+        if version:
+            return lake.load_version(source, dataset, version)
+        else:
+            return lake.load_latest(source, dataset)
+    
+    def list_available_sources(self) -> list[dict[str, Any]]:
+        """
+        List all available live data sources.
+        
+        Returns:
+            List of source metadata
+        """
+        from higher_ed_data_pipeline.sources.base import DataSourceRegistry
+        return DataSourceRegistry.list_sources()
+    
+    def list_data_lake_contents(self) -> list[dict[str, Any]]:
+        """
+        List all datasets in the raw data lake.
+        
+        Returns:
+            List of dataset metadata
+        """
+        from higher_ed_data_pipeline.storage import DataLake
+        lake = DataLake(self.settings)
+        return lake.list_datasets()

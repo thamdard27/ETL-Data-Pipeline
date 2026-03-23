@@ -134,6 +134,18 @@ class Settings(BaseSettings):
     )
     
     # -------------------------------------------------------------------------
+    # Data Source API Keys
+    # -------------------------------------------------------------------------
+    college_scorecard_api_key: Optional[str] = Field(
+        default=None,
+        description="College Scorecard API key (get free at https://api.data.gov/signup/)"
+    )
+    gcs_bucket: Optional[str] = Field(
+        default=None,
+        description="GCS bucket for data storage"
+    )
+    
+    # -------------------------------------------------------------------------
     # Path Settings
     # -------------------------------------------------------------------------
     base_path: Path = Field(
@@ -226,6 +238,7 @@ class Settings(BaseSettings):
             "database_url",
             "aws_access_key_id",
             "aws_secret_access_key",
+            "college_scorecard_api_key",
         }
         for key in sensitive_keys:
             if data.get(key):
