@@ -60,6 +60,44 @@ class ExtractionError(Exception):
     pass
 
 
+# Column name mapping: API field -> snake_case name
+COLUMN_NAME_MAP = {
+    "id": "school_id",
+    "school.name": "school_name",
+    "school.state": "school_state",
+    "school.city": "school_city",
+    "school.zip": "school_zip",
+    "school.school_url": "school_url",
+    "school.ownership": "ownership",
+    "school.region_id": "region_id",
+    "school.locale": "locale",
+    "school.operating": "operating",
+    "latest.student.size": "student_size",
+    "latest.student.grad_students": "grad_students",
+    "latest.admissions.admission_rate.overall": "admission_rate_overall",
+    "latest.completion.rate_suppressed.overall": "completion_rate_overall",
+    "latest.completion.rate_suppressed.four_year": "completion_rate_4yr",
+    "latest.cost.tuition.in_state": "tuition_in_state",
+    "latest.cost.tuition.out_of_state": "tuition_out_of_state",
+    "latest.aid.median_debt.completers.overall": "median_debt",
+    "latest.earnings.10_yrs_after_entry.median": "earnings_10yr_median",
+    "location.lat": "latitude",
+    "location.lon": "longitude",
+}
+
+# Numeric column types
+INTEGER_COLUMNS = [
+    "school_id", "student_size", "grad_students", "ownership",
+    "region_id", "locale", "operating", "tuition_in_state",
+    "tuition_out_of_state", "median_debt", "earnings_10yr_median",
+]
+
+FLOAT_COLUMNS = [
+    "admission_rate_overall", "completion_rate_overall",
+    "completion_rate_4yr", "latitude", "longitude",
+]
+
+
 def create_session() -> requests.Session:
     """
     Create a requests session with retry logic.
@@ -237,6 +275,156 @@ def extract_all_records(
     return all_records
 
 
+def normalize_column_name(col: str) -> str:
+    """
+    Convert API field name to snake_case.
+    
+    Args:
+        col: Original column name (e.g., 'school.name')
+        
+    Returns:
+        Snake case column name (e.g., 'school_name')
+    """
+    # Use mapping if available
+    if col in COLUMN_NAME_MAP:
+        return COLUMN_NAME_MAP[col]
+    
+    # Fallback: replace dots and convert to snake_case
+    return col.replace(".", "_").replace("-", "_").lower()
+
+
+def process_dataframe(records: List[Dict[str, Any]]) -> "pd.DataFrame":
+    """
+    Convert records to DataFrame with proper column names and types.
+    
+    Args:
+        records: List of raw API records
+        
+    Returns:
+        Processed pandas DataFrame
+    """
+    import pandas as pd
+    
+    # Create DataFrame
+    df = pd.DataFrame(records)
+    
+    # Normalize column names to snake_case
+    df.columns = [normalize_column_name(col) for col in df.columns]
+    
+    # Apply integer types (nullable Int64 to handle NaN)
+    for col in INTEGER_COLUMNS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    
+    # Apply float types
+    for col in FLOAT_COLUMNS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
+    
+    # String columns - ensure proper type without dropping data
+    string_columns = ["school_name", "school_state", "school_city", "school_zip", "school_url"]
+    for col in string_columns:
+        if col in df.columns:
+            df[col] = df[col].astype("string")
+    
+    # Add metadata columns
+    df["_extracted_at"] = datetime.utcnow()
+    df["_source"] = "college_scorecard_api"
+    
+    return df
+
+
+def get_unique_filepath(base_path: Path) -> Path:
+    """
+    Get a unique filepath, appending a counter if file exists.
+    
+    Args:
+        base_path: Desired file path
+        
+    Returns:
+        Unique file path that doesn't exist
+    """
+    if not base_path.exists():
+        return base_path
+    
+    # Add counter suffix
+    stem = base_path.stem
+    suffix = base_path.suffix
+    parent = base_path.parent
+    
+    counter = 1
+    while True:
+        new_path = parent / f"{stem}_{counter}{suffix}"
+        if not new_path.exists():
+            return new_path
+        counter += 1
+
+
+def save_raw_json(
+    records: List[Dict[str, Any]],
+    raw_dir: Path,
+) -> Path:
+    """
+    Save raw JSON to data/raw directory.
+    
+    Format: scorecard_YYYY_MM_DD_HHMMSS.json
+    Does NOT overwrite existing files.
+    
+    Args:
+        records: Raw API records
+        raw_dir: Path to data/raw directory
+        
+    Returns:
+        Path to saved file
+    """
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Format: scorecard_YYYY_MM_DD_HHMMSS.json
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
+    base_path = raw_dir / f"scorecard_{timestamp}.json"
+    
+    # Ensure we don't overwrite
+    filepath = get_unique_filepath(base_path)
+    
+    with open(filepath, "w") as f:
+        json.dump(records, f, indent=2)
+    
+    return filepath
+
+
+def save_processed_data(
+    df: "pd.DataFrame",
+    staging_dir: Path,
+) -> Dict[str, Path]:
+    """
+    Save processed DataFrame to staging directory.
+    
+    Args:
+        df: Processed DataFrame
+        staging_dir: Path to staging directory
+        
+    Returns:
+        Dictionary of format -> filepath
+    """
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
+    saved_files = {}
+    
+    # Save as Parquet
+    parquet_path = staging_dir / f"scorecard_{timestamp}.parquet"
+    parquet_path = get_unique_filepath(parquet_path)
+    df.to_parquet(parquet_path, index=False)
+    saved_files["parquet"] = parquet_path
+    
+    # Save as CSV for easy inspection
+    csv_path = staging_dir / f"scorecard_{timestamp}.csv"
+    csv_path = get_unique_filepath(csv_path)
+    df.to_csv(csv_path, index=False)
+    saved_files["csv"] = csv_path
+    
+    return saved_files
+
+
 def save_results(
     records: List[Dict[str, Any]],
     output_dir: Path,
@@ -246,43 +434,43 @@ def save_results(
     
     Args:
         records: List of records to save
-        output_dir: Directory to save files
+        output_dir: Base output directory (parent of raw/staging)
         
     Returns:
         Dictionary of format -> filepath
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     saved_files = {}
+    base_dir = output_dir.parent  # Go up from staging to data/
     
-    # Save as JSON
-    json_path = output_dir / f"scorecard_extract_{timestamp}.json"
-    with open(json_path, "w") as f:
-        json.dump(records, f, indent=2)
-    saved_files["json"] = json_path
-    print(f"  JSON: {json_path}")
+    # Step 6: Save raw JSON to data/raw
+    raw_dir = base_dir / "raw"
+    raw_path = save_raw_json(records, raw_dir)
+    saved_files["raw_json"] = raw_path
+    print(f"  Raw JSON: {raw_path}")
     
-    # Save as Parquet (if pandas/pyarrow available)
+    # Step 5: Process to DataFrame and save
     try:
         import pandas as pd
         
-        df = pd.DataFrame(records)
-        df["_extracted_at"] = datetime.utcnow()
-        df["_source"] = "college_scorecard_api"
+        print("\nProcessing data...")
+        df = process_dataframe(records)
         
-        parquet_path = output_dir / f"scorecard_extract_{timestamp}.parquet"
-        df.to_parquet(parquet_path, index=False)
-        saved_files["parquet"] = parquet_path
-        print(f"  Parquet: {parquet_path}")
+        print(f"  Columns normalized to snake_case: {len(df.columns)}")
+        print(f"  Integer columns: {sum(1 for c in INTEGER_COLUMNS if c in df.columns)}")
+        print(f"  Float columns: {sum(1 for c in FLOAT_COLUMNS if c in df.columns)}")
+        print(f"  Total rows: {len(df)} (no data dropped)")
         
-        # Save as CSV for easy inspection
-        csv_path = output_dir / f"scorecard_extract_{timestamp}.csv"
-        df.to_csv(csv_path, index=False)
-        saved_files["csv"] = csv_path
-        print(f"  CSV: {csv_path}")
+        # Save processed data to staging
+        staging_dir = base_dir / "staging"
+        staging_files = save_processed_data(df, staging_dir)
+        saved_files.update(staging_files)
+        
+        print(f"\nProcessed files:")
+        print(f"  Parquet: {staging_files['parquet']}")
+        print(f"  CSV: {staging_files['csv']}")
         
     except ImportError:
-        print("  (pandas not available - skipping parquet/csv)")
+        print("  (pandas not available - skipping processed data)")
     
     return saved_files
 
@@ -297,27 +485,28 @@ def print_summary(records: List[Dict[str, Any]]) -> None:
     if not records:
         return
     
-    # Count non-null values for key fields
+    # Count non-null values for key fields (using original API field names)
     key_fields = [
-        ("school.name", "School Name"),
-        ("school.state", "State"),
-        ("latest.student.size", "Student Size"),
-        ("latest.admissions.admission_rate.overall", "Admission Rate"),
-        ("latest.completion.rate_suppressed.overall", "Completion Rate"),
+        ("school.name", "school_name", "School Name"),
+        ("school.state", "school_state", "State"),
+        ("latest.student.size", "student_size", "Student Size"),
+        ("latest.admissions.admission_rate.overall", "admission_rate_overall", "Admission Rate"),
+        ("latest.completion.rate_suppressed.overall", "completion_rate_overall", "Completion Rate"),
     ]
     
     print("\nField completeness:")
-    for api_field, display_name in key_fields:
+    for api_field, snake_field, display_name in key_fields:
         non_null = sum(1 for r in records if r.get(api_field) is not None)
         pct = non_null / len(records) * 100
         bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
         print(f"  {display_name:<20} {bar} {pct:5.1f}% ({non_null}/{len(records)})")
     
     # State distribution
-    states = {}
+    states: Dict[str, int] = {}
     for r in records:
         state = r.get("school.state", "Unknown")
-        states[state] = states.get(state, 0) + 1
+        if state:
+            states[state] = states.get(state, 0) + 1
     
     print(f"\nStates covered: {len(states)}")
     top_states = sorted(states.items(), key=lambda x: x[1], reverse=True)[:5]
