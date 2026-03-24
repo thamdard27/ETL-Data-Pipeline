@@ -1,388 +1,441 @@
-# Higher Ed Data Pipeline
+# College Scorecard ETL Data Pipeline
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![SQL Server](https://img.shields.io/badge/SQL%20Server-2019+-CC2927.svg)](https://www.microsoft.com/sql-server)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A **fully automated**, production-grade ETL pipeline for higher education data. All data is fetched programmatically from live sources - **no manual file downloads required**.
+A **production-grade ETL pipeline** that extracts U.S. college and university data from the Department of Education's College Scorecard API, validates and transforms it, and loads it into SQL Server for analytics.
 
-## Key Principle
-
-> **Live Data Only**: This pipeline fetches data directly from authoritative sources via APIs. The raw data lake stores timestamped snapshots, enabling reproducible analysis and complete audit trails.
+---
 
 ## 📋 Table of Contents
 
-- [Features](#-features)
-- [Data Sources](#-data-sources)
+- [Problem Statement](#-problem-statement)
+- [Data Source](#-data-source)
 - [Architecture](#-architecture)
+- [Tech Stack](#-tech-stack)
 - [Quick Start](#-quick-start)
-- [Usage](#-usage)
-- [Data Lake](#-data-lake)
-- [Configuration](#-configuration)
+- [Running the Pipeline](#-running-the-pipeline)
+- [Example Output](#-example-output)
+- [Error Handling & Validation](#-error-handling--validation)
+- [Why ETL? Architecture Decisions](#-why-etl-architecture-decisions)
+- [Future Improvements](#-future-improvements)
 - [Project Structure](#-project-structure)
-- [Development](#-development)
-- [License](#-license)
+- [Resume Bullet Points](#-resume-bullet-points)
 
-## ✨ Features
+---
 
-### Automated Data Collection
-- **College Scorecard API**: Institution details, enrollment, costs, outcomes
-- **IPEDS Data System**: Comprehensive postsecondary education statistics
-- **No manual downloads**: All data fetched programmatically
-- **Timestamped storage**: Every fetch creates a new versioned snapshot
+## 🎯 Problem Statement
 
-### Data Lake Architecture
-- **Raw layer**: Immutable, timestamped source data
-- **Staging layer**: Intermediate processing
-- **Processed layer**: Clean, transformed data ready for analysis
-- **Metadata tracking**: Full lineage for every dataset
+### Business Challenge
 
-### Engineering Excellence
-- **Fully reproducible**: Re-run any pipeline at any time
-- **Modular architecture**: Separation of concerns with pluggable components
-- **Type safety**: Full type hints with Pydantic validation
-- **Comprehensive logging**: Structured logging with file rotation
+Students, parents, and policymakers need **data-driven insights** to make informed decisions about higher education. With over 6,000 accredited institutions in the United States, comparing schools on metrics like admission rates, graduation outcomes, tuition costs, and post-graduation earnings is overwhelming without proper data infrastructure.
 
-## 📊 Data Sources
+### Solution
 
-### College Scorecard (US Department of Education)
-Free API providing data on US colleges and universities:
-- Institution information (name, location, type)
-- Enrollment statistics and demographics
-- Costs, tuition, and financial aid
-- Completion and graduation rates
-- Post-graduation earnings outcomes
+This ETL pipeline automates the collection, validation, and storage of comprehensive college data, enabling:
 
-**API Key**: Get free at https://api.data.gov/signup/
+| Stakeholder | Use Case |
+|-------------|----------|
+| **Students & Parents** | Compare schools by admission rates, completion rates, and ROI |
+| **Higher Ed Institutions** | Benchmark performance against peer institutions |
+| **Data Analysts** | Build dashboards for enrollment trends and outcome analysis |
+| **Policymakers** | Track educational outcomes across states and institution types |
 
-### IPEDS (Integrated Postsecondary Education Data System)
-Comprehensive data from NCES (no API key required):
-- **HD**: Institutional Directory
-- **IC**: Institutional Characteristics (tuition, programs)
-- **EFFY**: Fall Enrollment
-- **SFA**: Student Financial Aid
-- **GR**: Graduation Rates
-- **C**: Completions/Degrees
+### Key Metrics Enabled
+
+| Metric | Business Value |
+|--------|----------------|
+| Admission Rate | Understand selectivity and acceptance likelihood |
+| Completion Rate | Measure student success and retention |
+| Student Size | Assess campus experience and resource availability |
+| 10-Year Earnings | Evaluate return on investment |
+| Tuition Costs | Compare affordability across institutions |
+| Size Category | Segment schools for peer comparisons |
+
+---
+
+## 📊 Data Source
+
+### College Scorecard API (U.S. Department of Education)
+
+The [College Scorecard](https://collegescorecard.ed.gov/) is the federal government's authoritative source for data on U.S. colleges and universities.
+
+| Attribute | Details |
+|-----------|---------|
+| **Provider** | U.S. Department of Education |
+| **Access** | Free API (requires API key from [api.data.gov](https://api.data.gov/signup/)) |
+| **Coverage** | 6,197 accredited institutions |
+| **Update Frequency** | Annual (academic year data) |
+| **Data Points** | 2,000+ fields per institution |
+
+**Data Categories Extracted:**
+- **Identity**: Institution name, city, state, ZIP, URL
+- **Enrollment**: Student size, graduate student count
+- **Selectivity**: Overall admission rate
+- **Outcomes**: Completion rate, 4-year completion rate
+- **Costs**: In-state tuition, out-of-state tuition
+- **Financial**: Median debt, 10-year median earnings
+
+---
 
 ## 🏗 Architecture
 
+### Pipeline Flow: Extract → Validate → Transform → Load
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Automated ETL Pipeline                            │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐  │
-│  │  Live Sources   │───▶│   Transform     │───▶│    Data Lake    │  │
-│  │  (APIs)         │    │   & Validate    │    │    Storage      │  │
-│  └─────────────────┘    └─────────────────┘    └─────────────────┘  │
-│          │                                              │            │
-│          ▼                                              ▼            │
-│  ┌─────────────────┐                         ┌─────────────────┐    │
-│  │ College Score-  │                         │ data/raw/       │    │
-│  │ card API        │                         │   └─ {source}/  │    │
-│  │                 │                         │      └─ {ts}.pq │    │
-│  │ IPEDS Data      │                         │ data/processed/ │    │
-│  │ System          │                         │   └─ {output}.pq│    │
-│  └─────────────────┘                         └─────────────────┘    │
-│                                                                       │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ETL PIPELINE ARCHITECTURE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌──────────┐    ┌───────────┐    ┌────────────┐    ┌──────────────────┐  │
+│   │ EXTRACT  │───▶│ VALIDATE  │───▶│ TRANSFORM  │───▶│      LOAD        │  │
+│   │          │    │           │    │            │    │                  │  │
+│   │ API Call │    │ Schema    │    │ Clean      │    │ SQL Server       │  │
+│   │ Paginated│    │ Nulls     │    │ Derive     │    │ Bulk Insert      │  │
+│   │ 6,197    │    │ Ranges    │    │ Standardize│    │ 6,150 records    │  │
+│   │ records  │    │ Duplicates│    │ Categorize │    │                  │  │
+│   └──────────┘    └───────────┘    └────────────┘    └──────────────────┘  │
+│        │                │                │                    │             │
+│        ▼                ▼                ▼                    ▼             │
+│   ┌──────────┐    ┌───────────┐    ┌────────────┐    ┌──────────────────┐  │
+│   │ data/raw │    │ Validation│    │ data/      │    │ dbo.college_     │  │
+│   │ .json    │    │ Report    │    │ processed/ │    │ scorecard        │  │
+│   └──────────┘    └───────────┘    │ .csv       │    │ (SQL Server)     │  │
+│                                    └────────────┘    └──────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Stage Breakdown
+
+| Stage | Description | Input | Output | Duration |
+|-------|-------------|-------|--------|----------|
+| **Extract** | Fetch data via paginated API calls (100 records/page) | College Scorecard API | 6,197 raw records + JSON backup | ~73s |
+| **Validate** | Schema validation, null checks, range validation, duplicate removal | Raw DataFrame | 6,150 cleaned records | <1s |
+| **Transform** | Column standardization, derived metrics, size categorization | Validated DataFrame | Analytics-ready DataFrame | <1s |
+| **Load** | Bulk insert with batching (500 rows/batch) | Transformed DataFrame | SQL Server table | ~5s |
+
+**Total Pipeline Duration:** ~80 seconds for 6,150 records
+
+---
+
+## 🛠 Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **Language** | Python 3.10+ | Core pipeline logic |
+| **Data Processing** | Pandas 2.0+ | DataFrame operations, transformations |
+| **Database ORM** | SQLAlchemy 2.0+ | Connection pooling, transaction management |
+| **Database Driver** | pyodbc | SQL Server ODBC connectivity |
+| **Database** | SQL Server 2019 (Azure SQL Edge) | Production data warehouse |
+| **Containerization** | Docker | Database portability and isolation |
+| **Configuration** | python-dotenv | Secure environment variable management |
+| **HTTP Client** | requests | API communication with retry logic |
+| **Data Formats** | JSON, CSV, Parquet | Multi-format storage for flexibility |
+
+---
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- Python 3.10+
+- Docker Desktop
+- College Scorecard API key ([Get free key](https://api.data.gov/signup/))
+
+### Step 1: Clone Repository
+
 ```bash
-# Clone and setup
-git clone https://github.com/tabasumh27/ETL-Data-Pipeline.git
+git clone https://github.com/yourusername/ETL-Data-Pipeline.git
 cd "ETL Data Pipeline"
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set your API key (optional but recommended)
-export COLLEGE_SCORECARD_API_KEY="your_api_key_here"
-
-# Run all automated pipelines
-python -m higher_ed_data_pipeline.runner run-all
 ```
 
-## 📖 Usage
-
-### Automated Pipeline Runner
+### Step 2: Create Virtual Environment
 
 ```bash
-# Run all configured pipelines
-python -m higher_ed_data_pipeline.runner run-all
-
-# Run a specific pipeline
-python -m higher_ed_data_pipeline.runner run --pipeline ipeds_directory
-
-# List available pipelines
-python -m higher_ed_data_pipeline.runner list-pipelines
-
-# List available data sources
-python -m higher_ed_data_pipeline.runner list-sources
-
-# Check data lake status
-python -m higher_ed_data_pipeline.runner status
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+# or: venv\Scripts\activate  # Windows
 ```
 
-### Python API
+### Step 3: Install Dependencies
 
-```python
-from higher_ed_data_pipeline import Extractor, DataLake, AutomatedRunner, Settings
-
-# Initialize
-settings = Settings()
-extractor = Extractor(settings)
-
-# Fetch from College Scorecard (auto-stores in raw data lake)
-df = extractor.from_college_scorecard(
-    field_groups=["basic", "enrollment", "cost"],
-    state="CA",  # California institutions
-    store_raw=True
-)
-
-print(f"Fetched {len(df)} institutions")
-print(df[["name", "city", "student_size", "cost_tuition_in_state"]].head())
+```bash
+pip install -r requirements.txt
 ```
 
-### Fetch IPEDS Data
+### Step 4: Start SQL Server (Docker)
 
-```python
-# Fetch IPEDS institutional directory
-df_directory = extractor.from_ipeds(
-    survey="HD",  # Directory
-    year=2023,
-    store_raw=True
-)
-
-# Fetch IPEDS enrollment data
-df_enrollment = extractor.from_ipeds(
-    survey="EFFY",  # Fall Enrollment
-    year=2023,
-    store_raw=True
-)
-
-# Fetch graduation rates
-df_graduation = extractor.from_ipeds(
-    survey="GR",
-    year=2023,
-    store_raw=True
-)
+```bash
+docker run -e "ACCEPT_EULA=Y" \
+  -e "MSSQL_SA_PASSWORD=YourStrong@Pass123" \
+  -p 1433:1433 \
+  --name sql_server_etl \
+  -d mcr.microsoft.com/azure-sql-edge
 ```
 
-### Using the Data Lake
+### Step 5: Configure Environment
 
-```python
-from higher_ed_data_pipeline import DataLake
-
-lake = DataLake(settings)
-
-# List all datasets
-datasets = lake.list_datasets()
-for ds in datasets:
-    print(f"{ds['source']}/{ds['dataset']}: {ds['versions']} versions")
-
-# Load latest version
-df = lake.load_latest(source="college_scorecard", dataset="all_institutions")
-
-# Load specific version by timestamp
-df = lake.load_version(
-    source="ipeds",
-    dataset="hd_2023",
-    timestamp="20240315_143022"
-)
-
-# Get dataset metadata
-metadata = lake.get_metadata(source="ipeds", dataset="hd_2023")
-print(f"Rows: {metadata['row_count']}, Columns: {metadata['column_count']}")
-```
-
-### Run Complete Pipeline
-
-```python
-from higher_ed_data_pipeline import AutomatedRunner
-
-runner = AutomatedRunner(settings)
-
-# Run all pipelines
-results = runner.run_all()
-
-# Check results
-for result in results:
-    print(f"{result.pipeline_id}: {result.status.value}")
-    print(f"  Rows: {result.rows_processed:,} → {result.rows_output:,}")
-    print(f"  Duration: {result.duration_seconds:.2f}s")
-
-# Run specific pipeline
-result = runner.run_by_name("college_scorecard_full")
-```
-
-## 🗄 Data Lake
-
-The data lake follows a medallion architecture:
-
-```
-data/
-├── raw/                          # Bronze layer - immutable source data
-│   ├── college_scorecard/
-│   │   ├── all_institutions_20240315_143022.parquet
-│   │   ├── all_institutions_20240315_143022.parquet.metadata.json
-│   │   └── ...
-│   └── ipeds/
-│       ├── hd_2023_20240315_150000.parquet
-│       ├── effy_2023_20240315_151000.parquet
-│       └── ...
-├── staging/                      # Silver layer - intermediate
-└── processed/                    # Gold layer - ready for analysis
-    ├── institutions_processed_20240315_160000.parquet
-    └── ipeds_enrollment_processed_20240315_161000.parquet
-```
-
-### Data Lake Features
-
-- **Immutable raw data**: Source data is never modified
-- **Timestamped versions**: Every fetch creates a new snapshot
-- **Metadata tracking**: Schema, row counts, source info stored with each file
-- **Easy rollback**: Access any historical version
-- **Retention policies**: Configurable cleanup for old versions
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-Create a `.env` file in the project root:
+Create `.env` file in project root:
 
 ```env
-# Application
-ENVIRONMENT=development
-DEBUG=false
-LOG_LEVEL=INFO
-
-# Data Source API Keys
+# API Configuration
 COLLEGE_SCORECARD_API_KEY=your_api_key_here
 
-# Processing
-BATCH_SIZE=10000
-MAX_WORKERS=4
+# Database Configuration
+DATABASE_URL=mssql+pyodbc://sa:YourStrong%40Pass123@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
 ```
 
-### Get API Keys
+---
 
-1. **College Scorecard**: Free at https://api.data.gov/signup/
-2. **IPEDS**: No API key required (public data)
+## ▶️ Running the Pipeline
+
+### Execute Full Pipeline
+
+```bash
+python main.py
+```
+
+### Expected Output
+
+```
+======================================================================
+STAGE 1: EXTRACT - Starting
+======================================================================
+Target: Fetch at least 1000 records from College Scorecard API
+Fetching page 1... Page 1: 100 records fetched (1.89s)
+...
+Total records fetched: 6197
+
+======================================================================
+STAGE 2: VALIDATE - Starting
+======================================================================
+✓ All 5 required columns present
+✓ No critical null values
+⚠ Found 47 duplicate records - removing
+
+======================================================================
+STAGE 3: TRANSFORM - Starting
+======================================================================
+✓ Created 'admission_rate_percentage'
+✓ Created 'completion_rate_percentage'
+✓ Created 'size_category'
+
+======================================================================
+STAGE 4: LOAD - Starting
+======================================================================
+✓ Successfully loaded 6150 rows (4.56 seconds, 1348 rows/second)
+
+######################################################################
+PIPELINE EXECUTION SUMMARY
+######################################################################
+Overall Status: ✓ SUCCESS
+Duration: 78.24 seconds
+
+Stage           Status     Records In   Records Out  Time (s)
+---------------------------------------------------------------
+EXTRACT         ✓ Pass     0            6197         73.34
+VALIDATE        ✓ Pass     6197         6150         0.01
+TRANSFORM       ✓ Pass     6150         6150         0.09
+LOAD            ✓ Pass     6150         6150         4.74
+```
+
+---
+
+## 📈 Example Output
+
+### Sample Data (First 5 Records)
+
+| school_name | school_state | student_size | admission_rate | completion_rate | size_category |
+|-------------|--------------|--------------|----------------|-----------------|---------------|
+| Alabama A & M University | AL | 6,207 | 0.8209 | 0.2912 | medium |
+| University of Alabama at Birmingham | AL | 13,856 | 0.8073 | 0.5885 | medium |
+| University of Alabama in Huntsville | AL | 7,249 | 0.7828 | 0.4891 | medium |
+| Alabama State University | AL | 4,006 | 0.9787 | 0.2748 | small |
+| The University of Alabama | AL | 32,580 | 0.8025 | 0.7206 | large |
+
+### Data Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total Institutions | 6,150 |
+| States Covered | 59 (including territories) |
+| Admission Rate Range | 0% - 100% |
+| Average Completion Rate | 56.36% |
+| Small Schools (<5,000) | 4,706 (76.5%) |
+| Medium Schools (5,000-15,000) | 540 (8.8%) |
+| Large Schools (>15,000) | 211 (3.4%) |
+
+---
+
+## 🛡 Error Handling & Validation
+
+### Validation Rules Applied
+
+| Check | Description | Action |
+|-------|-------------|--------|
+| **Schema Validation** | Verify required columns exist | Fail pipeline if missing |
+| **Null Checks** | Critical columns (name, state) must be non-null | Flag records with nulls |
+| **Data Type Validation** | Ensure numeric columns are numeric | Convert or flag |
+| **Range Validation** | Rates must be 0.0-1.0, sizes must be ≥0 | Flag out-of-range values |
+| **Duplicate Detection** | Check for duplicate (name, state) pairs | Remove duplicates, keep first |
+
+### Error Handling Strategy
+
+- **Try/Except Wrapping**: Each stage wrapped in error handling
+- **Immediate Halt**: Pipeline stops on first failure (fail-fast)
+- **Detailed Logging**: Full traceback captured for debugging
+- **Status Reporting**: Clear success/failure indication per stage
+
+---
+
+## 🏛 Why ETL? Architecture Decisions
+
+### Why ETL Instead of ELT?
+
+| Factor | ETL (Our Choice) | ELT Alternative |
+|--------|------------------|-----------------|
+| **Data Quality** | Validate BEFORE loading ensures clean warehouse | Raw data in warehouse requires post-load cleaning |
+| **Storage Costs** | Only store clean, transformed data | Store raw + transformed (higher costs) |
+| **Processing** | Python/Pandas for complex transformations | SQL-based transformations (limited flexibility) |
+| **Schema Control** | Define schema before load | Schema-on-read complexity |
+| **Use Case Fit** | Structured API data with known schema | Better for unstructured/semi-structured data lakes |
+
+**Decision**: ETL is optimal for this use case because:
+1. College Scorecard API returns structured JSON with known schema
+2. Data quality issues (duplicates, nulls) should be caught before loading
+3. Business logic (size categorization) is easier to implement in Python
+4. Final dataset is relatively small (6,150 records) - no need for distributed processing
+
+### Why Validation is Critical
+
+1. **Data Integrity**: Catch malformed records before they corrupt analytics
+2. **Business Rules**: Enforce domain constraints (rates between 0-1)
+3. **Deduplication**: Prevent double-counting in aggregations
+4. **Audit Trail**: Log all validation decisions for compliance
+
+### Why Raw → Processed Data Layers?
+
+| Layer | Purpose | Retention |
+|-------|---------|-----------|
+| **Raw (data/raw/)** | Immutable source snapshot for audit/reprocessing | Permanent |
+| **Staging (data/staging/)** | Intermediate processing artifacts | Temporary |
+| **Processed (data/processed/)** | Clean, analytics-ready data | Permanent |
+| **Database** | Query-optimized storage for dashboards | Permanent |
+
+**Benefits**:
+- **Reproducibility**: Re-run transformations from raw data
+- **Debugging**: Compare raw vs. processed to identify issues
+- **Compliance**: Maintain source records for audits
+
+---
+
+## 🔮 Future Improvements
+
+### Cloud Migration (Azure SQL)
+
+- Migrate from local Docker SQL Server to Azure SQL Database
+- Benefits: Managed service, auto-scaling, built-in high availability, geo-redundancy
+
+### Data Warehouse Architecture
+
+- Implement star schema with fact/dimension tables
+- Add IPEDS and BLS data sources for comprehensive analytics
+- Use Azure Synapse for scalable analytics workloads
+
+### Workflow Orchestration (Airflow/Prefect/Dagster)
+
+```python
+# Future: Apache Airflow DAG
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
+with DAG('college_scorecard_etl', schedule='@daily') as dag:
+    extract = PythonOperator(task_id='extract', python_callable=extract_data)
+    validate = PythonOperator(task_id='validate', python_callable=validate_data)
+    transform = PythonOperator(task_id='transform', python_callable=transform_data)
+    load = PythonOperator(task_id='load', python_callable=load_data)
+    
+    extract >> validate >> transform >> load
+```
+
+**Benefits of Orchestration Tools**:
+- Scheduled execution (daily/weekly refreshes)
+- Automatic retries with exponential backoff
+- Dependency management between tasks
+- Web UI for monitoring and alerting
+- Historical run tracking
+
+### Additional Improvements
+
+| Improvement | Priority | Effort |
+|-------------|----------|--------|
+| Add unit tests (pytest) | High | Medium |
+| Implement incremental loads | High | High |
+| Add data quality alerts (Slack/email) | Medium | Low |
+| Integrate CI/CD (GitHub Actions) | Medium | Medium |
+| Add more data sources (IPEDS, BLS) | Low | High |
+| Build Tableau/Power BI dashboard | Low | Medium |
+
+---
 
 ## 📁 Project Structure
 
 ```
-higher_ed_data_pipeline/
+ETL Data Pipeline/
+├── main.py                      # Pipeline orchestrator (entry point)
+├── requirements.txt             # Python dependencies
+├── pyproject.toml              # Project configuration
+├── .env                        # Environment variables (not in git)
+├── README.md                   # This file
+│
+├── scripts/
+│   ├── extract_scorecard.py    # Extract module
+│   ├── validate.py             # Validation module
+│   ├── transform.py            # Transformation module
+│   ├── load.py                 # SQL Server loader
+│   └── test_db_connection.py   # Connection testing utility
+│
+├── sql/
+│   ├── analytics.sql           # Analytics queries
+│   └── views.sql               # Database views
+│
+├── docs/
+│   └── data_dictionary.md      # Column documentation
+│
 ├── data/
-│   ├── raw/                  # Raw data lake (timestamped snapshots)
-│   ├── staging/              # Intermediate processing
-│   └── processed/            # Final outputs
-├── higher_ed_data_pipeline/
-│   ├── config/
-│   │   └── settings.py       # Configuration management
-│   ├── etl/
-│   │   ├── extract.py        # Data extraction (including live sources)
-│   │   ├── transform.py      # Data transformation
-│   │   ├── load.py           # Data loading
-│   │   └── pipeline.py       # Pipeline orchestration
-│   ├── sources/
-│   │   ├── base.py           # Base data source class
-│   │   ├── college_scorecard.py  # College Scorecard API
-│   │   └── ipeds.py          # IPEDS data source
-│   ├── storage/
-│   │   └── __init__.py       # Data lake management
-│   ├── utils/
-│   │   ├── logging.py        # Logging utilities
-│   │   └── helpers.py        # Helper functions
-│   └── runner.py             # Automated pipeline runner
-├── logs/                     # Application logs
-├── tests/                    # Test suite
-├── main.py                   # CLI entry point
-├── pyproject.toml            # Project configuration
-├── requirements.txt          # Dependencies
-└── README.md
+│   ├── raw/                    # Immutable source data (JSON)
+│   ├── staging/                # Intermediate files (CSV, Parquet)
+│   └── processed/              # Final analytics-ready data
+│
+├── higher_ed_data_pipeline/    # Core library modules
+│   ├── config/settings.py      # Configuration management
+│   ├── etl/                    # ETL utilities
+│   ├── sources/                # Data source connectors
+│   └── utils/                  # Helper functions
+│
+├── tests/                      # Unit tests
+└── logs/                       # Application logs
 ```
 
-## 🛠 Development
+---
 
-### Setup Development Environment
+## 📝 Resume Bullet Points
 
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
-pre-commit install
-```
+Use these for your Data Engineer resume:
 
-### Run Tests
+> **ETL Pipeline Development**  
+> Designed and implemented a production-grade ETL pipeline in Python that extracts 6,000+ college records from the U.S. Department of Education API, performs multi-stage validation (schema, null, range, duplicate checks), and loads transformed data into SQL Server with 99.2% data retention rate.
 
-```bash
-pytest tests/ -v
-pytest --cov=higher_ed_data_pipeline
-```
+> **Data Quality & Validation**  
+> Built automated data validation framework with fail-fast error handling, detecting and removing 47 duplicate records, enforcing business rules (rate constraints 0-1), and generating detailed audit logs for compliance requirements.
 
-### Code Quality
+> **Database Engineering**  
+> Implemented efficient bulk data loading to SQL Server using SQLAlchemy with connection pooling, batch inserts (500 rows/batch), and proper transaction management, achieving throughput of 1,300+ records/second.
 
-```bash
-black higher_ed_data_pipeline tests
-isort higher_ed_data_pipeline tests
-flake8 higher_ed_data_pipeline tests
-mypy higher_ed_data_pipeline
-```
-
-## 🐳 Docker
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Run automated pipelines
-CMD ["python", "-m", "higher_ed_data_pipeline.runner", "run-all"]
-```
-
-## 🔄 Scheduled Execution
-
-### Cron (Linux/Mac)
-
-```bash
-# Run daily at 2 AM
-0 2 * * * cd /path/to/project && /path/to/venv/bin/python -m higher_ed_data_pipeline.runner run-all
-```
-
-### GitHub Actions
-
-```yaml
-name: Automated ETL
-on:
-  schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  workflow_dispatch:  # Manual trigger
-
-jobs:
-  etl:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: python -m higher_ed_data_pipeline.runner run-all
-        env:
-          COLLEGE_SCORECARD_API_KEY: ${{ secrets.SCORECARD_API_KEY }}
-```
+---
 
 ## 📄 License
 
