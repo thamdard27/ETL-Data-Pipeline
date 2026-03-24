@@ -8,9 +8,11 @@ Extracts school data from the College Scorecard API with:
 - Retry logic (max 3 retries)
 - Comprehensive error handling
 - Pagination support (100 records/page)
+- Structured logging
 """
 
 import json
+import logging
 import sys
 import time
 from datetime import datetime
@@ -23,6 +25,17 @@ if TYPE_CHECKING:
     import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Configuration
 API_BASE_URL = "https://api.data.gov/ed/collegescorecard/v1/schools"
@@ -210,19 +223,18 @@ def extract_all_records(
     page = 0
     total_available = 0
     
-    print(f"\n{'='*60}")
-    print("COLLEGE SCORECARD DATA EXTRACTION")
-    print(f"{'='*60}")
-    print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Target: At least {min_records} records")
-    print(f"Per page: {PER_PAGE}")
-    print(f"Timeout: {TIMEOUT}s")
-    print(f"Max retries: {MAX_RETRIES}")
-    print(f"{'='*60}\n")
+    logger.info("=" * 60)
+    logger.info("COLLEGE SCORECARD DATA EXTRACTION - PIPELINE START")
+    logger.info("=" * 60)
+    logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Target: At least {min_records} records")
+    logger.info(f"Per page: {PER_PAGE}")
+    logger.info(f"Timeout: {TIMEOUT}s")
+    logger.info(f"Max retries: {MAX_RETRIES}")
     
     while True:
         try:
-            print(f"Fetching page {page + 1}...", end=" ", flush=True)
+            logger.info(f"Fetching page {page + 1}...")
             start_time = time.time()
             
             data = fetch_page(session, page, FIELDS)
@@ -232,34 +244,34 @@ def extract_all_records(
             metadata = data.get("metadata", {})
             total_available = metadata.get("total", 0)
             
-            print(f"✓ {len(records)} records ({elapsed:.2f}s)")
+            logger.info(f"Page {page + 1}: {len(records)} records fetched ({elapsed:.2f}s)")
             
             # Stop if no more data
             if not records:
-                print("\n→ No more records available.")
+                logger.info("No more records available.")
                 break
             
             all_records.extend(records)
             
             # Progress update
-            print(f"  Progress: {len(all_records)}/{total_available} "
-                  f"({len(all_records)/total_available*100:.1f}%)")
+            logger.info(f"Progress: {len(all_records)}/{total_available} "
+                       f"({len(all_records)/total_available*100:.1f}%)")
             
             # Check if we've reached our target
             if max_records and len(all_records) >= max_records:
-                print(f"\n→ Reached max records limit ({max_records}).")
+                logger.info(f"Reached max records limit ({max_records}).")
                 break
             
             # Check if we have enough records
             if len(all_records) >= min_records:
                 # Continue until we don't have more or hit a page boundary
                 if len(records) < PER_PAGE:
-                    print("\n→ Reached end of results.")
+                    logger.info("Reached end of results.")
                     break
             
             # Check if we've fetched all available records
             if len(all_records) >= total_available:
-                print("\n→ Fetched all available records.")
+                logger.info("Fetched all available records.")
                 break
             
             page += 1
@@ -268,13 +280,14 @@ def extract_all_records(
             time.sleep(0.1)
             
         except ExtractionError as e:
-            print(f"\n✗ Error: {e}")
+            logger.error(f"Error: {e}")
             if len(all_records) >= min_records:
-                print(f"  Continuing with {len(all_records)} records collected so far.")
+                logger.warning(f"Continuing with {len(all_records)} records collected so far.")
                 break
             else:
                 raise
     
+    logger.info(f"Total records fetched: {len(all_records)}")
     return all_records
 
 
@@ -449,41 +462,40 @@ def save_results(
     raw_dir = base_dir / "raw"
     raw_path = save_raw_json(records, raw_dir)
     saved_files["raw_json"] = raw_path
-    print(f"  Raw JSON: {raw_path}")
+    logger.info(f"Raw JSON saved: {raw_path}")
     
     # Step 5: Process to DataFrame and save
     try:
         import pandas as pd
         
-        print("\nProcessing data...")
+        logger.info("Processing data to DataFrame...")
         df = process_dataframe(records)
         
-        print(f"  Columns normalized to snake_case: {len(df.columns)}")
-        print(f"  Integer columns: {sum(1 for c in INTEGER_COLUMNS if c in df.columns)}")
-        print(f"  Float columns: {sum(1 for c in FLOAT_COLUMNS if c in df.columns)}")
-        print(f"  Total rows: {len(df)} (no data dropped)")
+        logger.info(f"Columns normalized to snake_case: {len(df.columns)}")
+        logger.info(f"Integer columns: {sum(1 for c in INTEGER_COLUMNS if c in df.columns)}")
+        logger.info(f"Float columns: {sum(1 for c in FLOAT_COLUMNS if c in df.columns)}")
+        logger.info(f"Total rows: {len(df)} (no data dropped)")
         
         # Save processed data to staging
         staging_dir = base_dir / "staging"
         staging_files = save_processed_data(df, staging_dir)
         saved_files.update(staging_files)
         
-        print(f"\nProcessed files:")
-        print(f"  Parquet: {staging_files['parquet']}")
-        print(f"  CSV: {staging_files['csv']}")
+        logger.info(f"Parquet saved: {staging_files['parquet']}")
+        logger.info(f"CSV saved: {staging_files['csv']}")
         
     except ImportError:
-        print("  (pandas not available - skipping processed data)")
+        logger.warning("pandas not available - skipping processed data")
     
     return saved_files
 
 
 def print_summary(records: List[Dict[str, Any]]) -> None:
-    """Print extraction summary statistics."""
-    print(f"\n{'='*60}")
-    print("EXTRACTION SUMMARY")
-    print(f"{'='*60}")
-    print(f"Total records: {len(records)}")
+    """Log extraction summary statistics."""
+    logger.info("="*60)
+    logger.info("EXTRACTION SUMMARY")
+    logger.info("="*60)
+    logger.info(f"Total records: {len(records)}")
     
     if not records:
         return
@@ -497,12 +509,11 @@ def print_summary(records: List[Dict[str, Any]]) -> None:
         ("latest.completion.rate_suppressed.overall", "completion_rate_overall", "Completion Rate"),
     ]
     
-    print("\nField completeness:")
+    logger.info("Field completeness:")
     for api_field, snake_field, display_name in key_fields:
         non_null = sum(1 for r in records if r.get(api_field) is not None)
         pct = non_null / len(records) * 100
-        bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
-        print(f"  {display_name:<20} {bar} {pct:5.1f}% ({non_null}/{len(records)})")
+        logger.info(f"  {display_name:<20} {pct:5.1f}% ({non_null}/{len(records)})")
     
     # State distribution
     states: Dict[str, int] = {}
@@ -511,52 +522,85 @@ def print_summary(records: List[Dict[str, Any]]) -> None:
         if state:
             states[state] = states.get(state, 0) + 1
     
-    print(f"\nStates covered: {len(states)}")
-    top_states = sorted(states.items(), key=lambda x: x[1], reverse=True)[:5]
-    print("Top 5 states:")
-    for state, count in top_states:
-        print(f"  {state}: {count} schools")
+    logger.info(f"States covered: {len(states)}")
+
+
+def fetch_scorecard_data(
+    min_records: int = MIN_RECORDS,
+    max_records: Optional[int] = None,
+    save_files: bool = True,
+) -> "pd.DataFrame":
+    """
+    Fetch College Scorecard data and return as a pandas DataFrame.
+    
+    This is the main entry point for the extraction module.
+    
+    Args:
+        min_records: Minimum number of records to fetch (default: 1000)
+        max_records: Maximum number of records (None for no limit)
+        save_files: Whether to save raw JSON and processed files
+        
+    Returns:
+        pandas.DataFrame: Processed DataFrame with normalized column names
+        
+    Raises:
+        ExtractionError: If extraction fails
+    """
+    import pandas as pd
+    
+    # Extract records from API
+    records = extract_all_records(
+        min_records=min_records,
+        max_records=max_records,
+    )
+    
+    if not records:
+        logger.error("No records extracted!")
+        raise ExtractionError("No records extracted from API")
+    
+    # Log summary
+    print_summary(records)
+    
+    # Save files if requested
+    if save_files:
+        output_dir = Path(__file__).parent.parent / "data" / "staging"
+        logger.info(f"Saving to: {output_dir}")
+        saved_files = save_results(records, output_dir)
+        logger.info(f"Files saved: {len(saved_files)}")
+    
+    # Process to DataFrame
+    df = process_dataframe(records)
+    
+    # Log completion
+    logger.info("="*60)
+    logger.info("PIPELINE END - EXTRACTION COMPLETE")
+    logger.info("="*60)
+    logger.info(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Records extracted: {len(df)}")
+    
+    return df
 
 
 def main() -> int:
-    """Main entry point."""
+    """Main entry point for CLI execution."""
     try:
-        # Extract records
-        records = extract_all_records(
-            min_records=MIN_RECORDS,
-            max_records=None,  # No limit - fetch all
-        )
-        
-        if not records:
-            print("No records extracted!")
-            return 1
-        
-        # Print summary
-        print_summary(records)
-        
-        # Save results
-        output_dir = Path(__file__).parent.parent / "data" / "staging"
-        print(f"\nSaving to: {output_dir}")
-        saved_files = save_results(records, output_dir)
-        
-        print(f"\n{'='*60}")
-        print("EXTRACTION COMPLETE")
-        print(f"{'='*60}")
-        print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Records extracted: {len(records)}")
-        print(f"Files saved: {len(saved_files)}")
-        
+        df = fetch_scorecard_data()
+        logger.info(f"DataFrame shape: {df.shape}")
         return 0
         
     except ExtractionError as e:
-        print(f"\n{'='*60}")
-        print(f"EXTRACTION FAILED: {e}")
-        print(f"{'='*60}")
+        logger.error("="*60)
+        logger.error(f"EXTRACTION FAILED: {e}")
+        logger.error("="*60)
         return 1
     except KeyboardInterrupt:
-        print("\n\nExtraction cancelled by user.")
+        logger.warning("Extraction cancelled by user.")
         return 130
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    df = fetch_scorecard_data()
+    print("\\n" + "="*60)
+    print("DataFrame Preview (first 5 rows):")
+    print("="*60)
+    print(df.head())
