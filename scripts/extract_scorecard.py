@@ -15,9 +15,12 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import requests
+
+if TYPE_CHECKING:
+    import pandas as pd
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -314,12 +317,12 @@ def process_dataframe(records: List[Dict[str, Any]]) -> "pd.DataFrame":
     # Apply integer types (nullable Int64 to handle NaN)
     for col in INTEGER_COLUMNS:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")  # type: ignore[union-attr]
     
     # Apply float types
     for col in FLOAT_COLUMNS:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")  # type: ignore[union-attr]
     
     # String columns - ensure proper type without dropping data
     string_columns = ["school_name", "school_state", "school_city", "school_zip", "school_url"]
