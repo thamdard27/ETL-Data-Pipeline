@@ -2,17 +2,21 @@
 ETL Module
 ==========
 
-Core ETL components for data extraction, transformation, and loading.
+Core ETL components for College Scorecard data extraction.
 """
 
-from higher_ed_data_pipeline.etl.extract import Extractor
-from higher_ed_data_pipeline.etl.transform import Transformer
-from higher_ed_data_pipeline.etl.load import Loader
-from higher_ed_data_pipeline.etl.pipeline import ETLPipeline
+from higher_ed_data_pipeline.etl.college_scorecard_client import (
+    CollegeScorecardClient,
+    APIConfig,
+    APIResponse,
+)
+from higher_ed_data_pipeline.etl.college_scorecard_extractor import (
+    CollegeScorecardExtractor,
+)
 
 __all__ = [
-    "Extractor",
-    "Transformer",
-    "Loader",
-    "ETLPipeline",
+    "CollegeScorecardClient",
+    "CollegeScorecardExtractor",
+    "APIConfig",
+    "APIResponse",
 ]
