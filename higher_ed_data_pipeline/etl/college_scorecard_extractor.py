@@ -247,7 +247,7 @@ class CollegeScorecardExtractor:
         
         for col in int_cols:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")  # type: ignore[union-attr]
         
         # Float columns
         float_cols = [
@@ -397,7 +397,7 @@ class CollegeScorecardExtractor:
             "student_size", "admission_rate_overall", "completion_rate_overall",
         ]
         other_cols = [c for c in df.columns if c not in priority_cols]
-        df = df[priority_cols + other_cols]
+        df = pd.DataFrame(df[priority_cols + other_cols])
         
         logger.info(
             f"Extraction complete: {len(df)} rows, {len(df.columns)} columns"

@@ -224,7 +224,7 @@ class CollegeScorecardClient:
         Returns:
             APIResponse: API response with school data
         """
-        params = {
+        params: Dict[str, Any] = {
             "page": page,
             "per_page": per_page or self.config.per_page,
         }

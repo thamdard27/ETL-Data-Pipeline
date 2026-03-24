@@ -65,6 +65,7 @@ def inspect_api():
         value = result
         exists = True
         actual_path = []
+        key = ""  # Initialize for Pylance
         
         for key in path:
             if isinstance(value, dict) and key in value:
