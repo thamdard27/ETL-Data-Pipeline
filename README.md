@@ -26,7 +26,7 @@ A **production-grade ETL pipeline** that extracts U.S. college and university da
 
 ---
 
-## 🎯 Problem Statement
+##  Problem Statement
 
 ### Business Challenge
 
@@ -56,7 +56,7 @@ This ETL pipeline automates the collection, validation, and storage of comprehen
 
 ---
 
-## 📊 Data Source
+##  Data Source
 
 ### College Scorecard API (U.S. Department of Education)
 
@@ -80,7 +80,7 @@ The [College Scorecard](https://collegescorecard.ed.gov/) is the federal governm
 
 ---
 
-## 🏗 Architecture
+##  Architecture
 
 ### Pipeline Flow: Extract → Validate → Transform → Load
 
@@ -121,7 +121,7 @@ The [College Scorecard](https://collegescorecard.ed.gov/) is the federal governm
 
 ---
 
-## 🛠 Tech Stack
+##  Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
@@ -137,7 +137,7 @@ The [College Scorecard](https://collegescorecard.ed.gov/) is the federal governm
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 
@@ -190,7 +190,7 @@ DATABASE_URL=mssql+pyodbc://sa:YourStrong%40Pass123@localhost:1433/master?driver
 
 ---
 
-## ▶️ Running the Pipeline
+##  Running the Pipeline
 
 ### Execute Full Pipeline
 
@@ -244,7 +244,7 @@ LOAD            ✓ Pass     6150         6150         4.74
 
 ---
 
-## 📈 Example Output
+##  Example Output
 
 ### Sample Data (First 5 Records)
 
@@ -270,7 +270,7 @@ LOAD            ✓ Pass     6150         6150         4.74
 
 ---
 
-## 🛡 Error Handling & Validation
+##  Error Handling & Validation
 
 ### Validation Rules Applied
 
@@ -291,7 +291,7 @@ LOAD            ✓ Pass     6150         6150         4.74
 
 ---
 
-## 🏛 Why ETL? Architecture Decisions
+##  Why ETL? Architecture Decisions
 
 ### Why ETL Instead of ELT?
 
@@ -332,7 +332,7 @@ LOAD            ✓ Pass     6150         6150         4.74
 
 ---
 
-## 🔮 Future Improvements
+##  Future Improvements
 
 ### Cloud Migration (Azure SQL)
 
@@ -422,20 +422,6 @@ ETL Data Pipeline/
 
 ---
 
-## 📝 Resume Bullet Points
-
-Use these for your Data Engineer resume:
-
-> **ETL Pipeline Development**  
-> Designed and implemented a production-grade ETL pipeline in Python that extracts 6,000+ college records from the U.S. Department of Education API, performs multi-stage validation (schema, null, range, duplicate checks), and loads transformed data into SQL Server with 99.2% data retention rate.
-
-> **Data Quality & Validation**  
-> Built automated data validation framework with fail-fast error handling, detecting and removing 47 duplicate records, enforcing business rules (rate constraints 0-1), and generating detailed audit logs for compliance requirements.
-
-> **Database Engineering**  
-> Implemented efficient bulk data loading to SQL Server using SQLAlchemy with connection pooling, batch inserts (500 rows/batch), and proper transaction management, achieving throughput of 1,300+ records/second.
-
----
 
 ## 📄 License
 
