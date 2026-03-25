@@ -22,7 +22,7 @@ A **production-grade ETL pipeline** that extracts U.S. college and university da
 - [Why ETL? Architecture Decisions](#-why-etl-architecture-decisions)
 - [Future Improvements](#-future-improvements)
 - [Project Structure](#-project-structure)
-- [Resume Bullet Points](#-resume-bullet-points)
+
 
 ---
 
@@ -420,12 +420,6 @@ ETL Data Pipeline/
 └── logs/                       # Application logs
 ```
 
----
-
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
