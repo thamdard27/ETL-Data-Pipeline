@@ -9,7 +9,7 @@ A **production-grade ETL pipeline** that extracts U.S. college and university da
 
 ---
 
-## 📋 Table of Contents
+##  Table of Contents
 
 - [Problem Statement](#-problem-statement)
 - [Data Source](#-data-source)
